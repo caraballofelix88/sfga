@@ -51,7 +51,6 @@ end
 
 --temporary fitness function = sum of gene array = 14
 --temporary generation limit: 10
---
 
 crossover = .6
 mutation = .005

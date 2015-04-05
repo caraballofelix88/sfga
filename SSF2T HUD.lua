@@ -1246,6 +1246,7 @@ local function render_st_hud()
 		end
 end
 
+--AI code starts here
 local function lr_movement(dir_chance, stride_avg, stride_var, distance)
     local direction = 0
     local framecount = 0
@@ -1254,53 +1255,138 @@ local function lr_movement(dir_chance, stride_avg, stride_var, distance)
     --if too close, prefer to move away
     --if too far, get in
 
-    if distance + 75 > real_dist then
+    if distance - 75 > real_dist then
         if math.random() > .85 then direction = 6 else direction = 4 end
-    elseif distance - 75 > real_dist then
+        print("too close")
+    elseif distance + 75 < real_dist then
         if math.random() > .85 then direction = 4 else direction = 6 end
+        print("too far")
     else 
         if math.random() < dir_chance/128 then direction = 4 else direction = 6 end
     end
 
-    print("bl")
     --generate length of direction input
-    framecount = math.floor(stride_avg + math.random(-stride_var, stride_var))
+    framecount = math.abs(math.floor(stride_avg + math.random(-stride_var, stride_var)))
 
     return direction, framecount
 end
 
+
+local function button_pressing(b1,b2,b3,b4,b5,b6,d1,d2,d3,d4,d5,d6)
+    local rand_val = math.random()
+    local real_dist = tonumber(calc_range():match("([%d%.]+)/*"))
+
+    --each button press chance b is a function of proximity to a desired button distance d
+
+    if (b1/128 - math.abs(d1-real_dist)/d1) > rand_val then input["P1 Weak Punch"] = true end
+    if (b2/128 - (math.abs(d2-real_dist)/d2)) > rand_val then input["P1 Medium Punch"] = true end
+    if (b3/128 - (math.abs(d3-real_dist)/d3)) > rand_val then input["P1 Strong Punch"] = true end
+    if (b4/128 - (math.abs(d4-real_dist)/d4)) > rand_val then input["P1 Weak Kick"] = true end
+    if (b5/128 - (math.abs(d5-real_dist)/d5)) > rand_val then input["P1 Medium Kick"] = true end
+    if (b6/128 - (math.abs(d6-real_dist)/d6)) > rand_val then input["P1 Strong Kick"] = true end
+end
+
+local function crouch(crouch_chance, crouch_avg, crouch_var)
+    print("crouch")
+    local cr = false
+    local crouch_time = 0
+    if crouch_chance/128 > math.random() then cr = true end
+    
+    crouch_time = math.abs(math.floor(crouch_avg + math.random(-crouch_var, crouch_var)))
+    return cr, crouch_time
+end
+
+local function jump(jump_chance, distance)
+    if math.random() < jump_chance/128 then
+        return true
+    end
+end
+
+local salty_mashing = coroutine.create(function()
+    local press = false
+    while true do
+        input["P1 Coin"] = press
+        input["P1 Start"] = press
+        input["P1 Weak Punch"] = press
+        press = not press
+        coroutine.yield()
+    end 
+end)
+
 generateInput = coroutine.create(function(chromosome)
-    local direction = 0
-    local framecount = 0
+    local direction = 5
+    local stride_count = 0
+    local crouch_count = 0
 
     local dir_chance = 64
-    local stride_avg = 13
-    local stride_var = 8
+    local stride_avg = 6
+    local stride_var = 4
+
+    local is_crouching = false
+    local crouch_chance = 30
+    local crouch_avg = 15
+    local crouch_var = 6
+
     local distance = 150
 
     while true do
 	    in_match = memory.readword(0xFF847F)
+        input = {}
         if in_match  ~= 0 then 
-            if framecount < 1 then
-                print("frames trigger")
-                direction, framecount = lr_movement(dir_chance,stride_avg,stride_var,distance)
+            if stride_count < 1 then
+                direction, stride_count = lr_movement(dir_chance,stride_avg,stride_var,distance)
+            end
+            if crouch_count < 1 then
+                is_crouching, crouch_count = crouch(crouch_chance, crouch_avg, crouch_var)
             end
 
-            --write current stride direction to input
-            input = {}
-            if direction == 4 then --worry about side switch later
-                input["P1 Left"] = true
-            elseif direction == 6 then
-                input["P1 Right"] = true
+            if is_crouching and direction > 3 then direction = direction - 3 end
+            if jump(2,distance) == true and direction < 7 then direction = direction + 3 end
+
+            --write left-right to input
+            if direction % 3 == 1 then 
+                if memory.readword(0xFF8454) <= memory.readword(0xFF8454+p2) then --if p1 is on left
+                    input["P1 Left"] = true
+                else 
+                    input["P1 Right"] = true
+                end 
+            elseif direction % 3 == 0 then
+                if memory.readword(0xFF8454) <= memory.readword(0xFF8454+p2) then --if p1 is on right
+                    input["P1 Right"] = true
+                else
+                    input["P1 Left"] = true
+                end 
             end
+
+            --write up-down to input
+            if direction < 4 then 
+                input["P1 Down"] = true 
+            elseif direction > 6 then 
+                input["P1 Up"] = true 
+            end 
+
+
+
+            --for now just mashes, thats okay
+            button_pressing(80,100,90,65,99,70,  40,55,55,40,80,70)
+
             joypad.set(input)
 
-            print(direction .. "b")
-            framecount = framecount - 1
+            --tick down counters
+            stride_count = stride_count - 1
+            crouch_count = crouch_count - 1
+
+            print(direction)
+        else
+            coroutine.resume(salty_mashing)
+            joypad.set(input)
         end
         coroutine.yield()
     end
 end)
+--AI code ends here
+
+
 ----------------------------------------------------------------------------------------------------
 --Hot Keys
 ----------------------------------------------------------------------------------------------------
