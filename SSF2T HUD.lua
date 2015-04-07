@@ -1,9 +1,84 @@
+--chromosome class
+math.randomseed(os.time())
+--chromosome class
+local Chromosome = {}
+Chromosome.__index = Chromosome
+
+function Chromosome.new(array)
+    local self = setmetatable({}, Chromosome)
+    self.length = table.getn(array)
+    self.genes = array
+    self.fitness = 0
+    return self
+end
+
+
+--multiple crossover style not really conducive to desired effect, i dont think
+function Chromosome.new_child(mom, dad, c_rate, m_rate)
+    local self = setmetatable({}, Chromosome)
+    local gene_parent = false
+    self.length = mom.length
+    self.fitness = 0
+    self.genes = {}
+
+    --imparting genes
+    for x = 1, self.length do
+        if math.random() < c_rate then
+            gene_parent = true --false = mom, true = dad
+        end
+
+        if not gene_parent then
+            self.genes[x] = mom.genes[x]
+        else
+            self.genes = dad.genes[x]
+        end
+    end
+
+    --mutation
+    for i,v in ipairs(self.genes) do
+        if math.random() < m_rate then
+            if v == 1 then
+                self.genes[i] = 0
+            else
+                self.genes[i] = 1
+            end
+        end
+    end
+
+    return self
+end
+
+
+
+
 
 ----------------------------------------------------------------------------------------------------
 -- Global Variables
 ----------------------------------------------------------------------------------------------------
 crossover_rate = .65
 mutation_rate = .005
+chromosome_list = {}
+
+
+--initial parents
+local mom = {}
+local pop = {}
+
+for x=1,512 do
+    table.insert(mom, math.random(0,1))
+    table.insert(pop, math.random(0,1))
+end 
+
+local m = Chromosome.new(mom)
+local p = Chromosome.new(pop)
+
+table.insert(chromosome_list, m)
+table.insert(chromosome_list, p)
+
+
+
+
+
 
 p2=0x000400
 stage_timer=false
@@ -1254,13 +1329,10 @@ local function lr_movement(dir_chance, stride_avg, stride_var, distance)
 
     --if too close, prefer to move away
     --if too far, get in
-
     if distance - 75 > real_dist then
         if math.random() > .85 then direction = 6 else direction = 4 end
-        print("too close")
     elseif distance + 75 < real_dist then
         if math.random() > .85 then direction = 4 else direction = 6 end
-        print("too far")
     else 
         if math.random() < dir_chance/128 then direction = 4 else direction = 6 end
     end
@@ -1271,23 +1343,21 @@ local function lr_movement(dir_chance, stride_avg, stride_var, distance)
     return direction, framecount
 end
 
-
+--presses buttons
 local function button_pressing(b1,b2,b3,b4,b5,b6,d1,d2,d3,d4,d5,d6)
     local rand_val = math.random()
     local real_dist = tonumber(calc_range():match("([%d%.]+)/*"))
-
     --each button press chance b is a function of proximity to a desired button distance d
-
     if (b1/128 - math.abs(d1-real_dist)/d1) > rand_val then input["P1 Weak Punch"] = true end
-    if (b2/128 - (math.abs(d2-real_dist)/d2)) > rand_val then input["P1 Medium Punch"] = true end
-    if (b3/128 - (math.abs(d3-real_dist)/d3)) > rand_val then input["P1 Strong Punch"] = true end
-    if (b4/128 - (math.abs(d4-real_dist)/d4)) > rand_val then input["P1 Weak Kick"] = true end
-    if (b5/128 - (math.abs(d5-real_dist)/d5)) > rand_val then input["P1 Medium Kick"] = true end
-    if (b6/128 - (math.abs(d6-real_dist)/d6)) > rand_val then input["P1 Strong Kick"] = true end
+    if (b2/128 - math.abs(d2-real_dist)/d2) > rand_val then input["P1 Medium Punch"] = true end
+    if (b3/128 - math.abs(d3-real_dist)/d3) > rand_val then input["P1 Strong Punch"] = true end
+    if (b4/128 - math.abs(d4-real_dist)/d4) > rand_val then input["P1 Weak Kick"] = true end
+    if (b5/128 - math.abs(d5-real_dist)/d5) > rand_val then input["P1 Medium Kick"] = true end
+    if (b6/128 - math.abs(d6-real_dist)/d6) > rand_val then input["P1 Strong Kick"] = true end
 end
 
+--determines crouching state 
 local function crouch(crouch_chance, crouch_avg, crouch_var)
-    print("crouch")
     local cr = false
     local crouch_time = 0
     if crouch_chance/128 > math.random() then cr = true end
@@ -1296,25 +1366,109 @@ local function crouch(crouch_chance, crouch_avg, crouch_var)
     return cr, crouch_time
 end
 
+--determines chance of random jump input
 local function jump(jump_chance, distance)
-    if math.random() < jump_chance/128 then
+    local real_dist = tonumber(calc_range():match("([%d%.]+)/*"))
+    if (jump_chance/128  - math.abs(distance - real_dist)/distance) > math.random() then
         return true
     end
 end
 
+--presses continue furiously upon defeat
 local salty_mashing = coroutine.create(function()
     local press = false
     while true do
-        input["P1 Coin"] = press
+        if(math.random() > .8) then input["P1 Coin"] = true end
         input["P1 Start"] = press
-        input["P1 Weak Punch"] = press
+        input["P1 Medium Punch"] = press
         press = not press
         coroutine.yield()
     end 
 end)
 
+
+local special_move = coroutine.create(function(s1,s2,s3,s4,d1,d2,d3,d4)
+    local real_dist = 0
+    local rand_val = 0
+    
+    while true do
+        real_dist = tonumber(calc_range():match("([%d%.]+)/*"))
+        rand_val = math.random()
+
+        --fireball
+        if (s1/128 - math.abs(d1-real_dist)/d1) > rand_val then 
+            coroutine.yield(4)
+            coroutine.yield(4) --undoes srk buffer
+            coroutine.yield(1)
+            coroutine.yield(2)
+            coroutine.yield(3)
+            coroutine.yield(6)
+            input["P1 Strong Punch"] = true
+
+        --tatsu
+        elseif (s2/128 - (math.abs(d2-real_dist)/d2)) > rand_val then 
+            coroutine.yield(5)
+            coroutine.yield(2)
+            coroutine.yield(1)
+            coroutine.yield(4)
+            input["P1 Weak Kick"] = true
+
+        --shoryuken
+        elseif (s3/128 - (math.abs(d3-real_dist)/d3)) > rand_val then 
+            coroutine.yield(6)
+            coroutine.yield(2)
+            coroutine.yield(3)
+            input["P1 Strong Punch"] = true
+
+        --super
+        elseif (s4/128 - (math.abs(d4-real_dist)/d4)) + (75-memory.readbyte(0xFF8479)/144) > rand_val and memory.readbyte(0xFF8702) >= 48 then 
+            coroutine.yield(2)
+            coroutine.yield(3)
+            coroutine.yield(6)
+            coroutine.yield(2)
+            coroutine.yield(3)
+            coroutine.yield(6)
+            input["P1 Strong Punch"] = true
+        else
+            coroutine.yield(0)
+        end 
+    end
+end)
+
+
+
+local react_to_antiair = coroutine.create(function(rt)
+    local y_dist = 0
+    local reaction_count = 0
+
+    while true do
+        y_dist = memory.readword(0xFF8458+p2) - memory.readword(0xFF8458) --p2's y - p1's y
+        x_dist = math.abs(memory.readword(0xFF8454) - memory.readword(0xFF8454))
+        if y_dist > 60  and x_dist < 100 then --if within jumpin range
+            reaction_count = math.max(rt,14) --cant react faster than this
+            while(reaction_count > 0) do
+                reaction_count = reaction_count - 1
+                coroutine.yield(0)
+            end
+            coroutine.yield(6)
+            coroutine.yield(2)
+            coroutine.yield(3)
+            input["P1 Medium Punch"] = true
+        else
+            coroutine.yield(0)
+        end 
+    end 
+end)
+
+--calls individual input functions to get directional and button input
 generateInput = coroutine.create(function(chromosome)
     local direction = 5
+    local special_dir = 0
+    local is_crouching = false
+    
+
+    local reaction_time = 17
+
     local stride_count = 0
     local crouch_count = 0
 
@@ -1322,12 +1476,14 @@ generateInput = coroutine.create(function(chromosome)
     local stride_avg = 6
     local stride_var = 4
 
-    local is_crouching = false
     local crouch_chance = 30
     local crouch_avg = 15
     local crouch_var = 6
 
-    local distance = 150
+    local distance = 100
+
+    local antiair_dir = 0
+    local special_dir = 0
 
     while true do
 	    in_match = memory.readword(0xFF847F)
@@ -1341,7 +1497,17 @@ generateInput = coroutine.create(function(chromosome)
             end
 
             if is_crouching and direction > 3 then direction = direction - 3 end
-            if jump(2,distance) == true and direction < 7 then direction = direction + 3 end
+            if jump(2,100) == true and direction < 7 then direction = direction + 3 end
+
+
+            __,antiair_dir = coroutine.resume(react_to_antiair, reaction_time)
+            __,special_dir = coroutine.resume(special_move, 20,10,15,10, 220,180,30,90)
+
+            if antiair_dir ~= 0 then 
+                direction = antiair_dir
+            elseif special_dir ~= 0 then 
+                direction = special_dir
+            end 
 
             --write left-right to input
             if direction % 3 == 1 then 
@@ -1376,7 +1542,6 @@ generateInput = coroutine.create(function(chromosome)
             stride_count = stride_count - 1
             crouch_count = crouch_count - 1
 
-            print(direction)
         else
             coroutine.resume(salty_mashing)
             joypad.set(input)
@@ -1453,6 +1618,10 @@ print("-------------------------------------------------------------------------
 --Main loop
 ----------------------------------------------------------------------------------------------------
 	-- Draw these functions on the same frame data is read
+    local round_end = false
+    local p1_rounds = 0
+    local p2_rounds = 0
+    local match_end = false
 	emu.registerbefore(function()
 		--Hitbox rendering
 
@@ -1462,5 +1631,34 @@ print("-------------------------------------------------------------------------
 		render_st_hud()
         --Generate inputs
         coroutine.resume(generateInput, 1)
+
+        --if the round is over, say so!
+           if (memory.readbyte(0xFF8479) == 255 or memory.readbyte(0xFF8879) == 255) and round_end == false then
+               round_end = true
+               print("end of round!")
+               if memory.readbyte(0xFF8479) == 255 then
+                   p2_rounds = p2_rounds + 1
+                elseif memory.readbyte(0xFF8879) == 255 then
+                    p1_rounds = p1_rounds + 1
+                end 
+           end 
+
+           if round_end == true then 
+               if (p2_rounds == 2 or p1_rounds == 2)  and match_end == false then 
+                   print("match end")
+                   match_end = true
+                   --generate new chromosome here
+               end
+
+               if(memory.readbyte(0xFF8479) == 144) then
+                   if match_end then 
+                        p1_rounds = 0
+                        p2_rounds = 0
+                        match_end = false
+                    end 
+                   round_end = false
+                   print("round start")
+               end 
+           end 
 
 	end)
